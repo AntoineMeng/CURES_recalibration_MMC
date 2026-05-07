@@ -46,8 +46,6 @@ FEATURE_ORDER = [
 CLINICAL_KEYS = ("age", "cancer", "CPD", "heart_rate", "SBP", "SAT", "BNP_fp", "cTN_p", "dvt")
 MISSING_KEYS = frozenset({"BNP_fm", "cTN_m", "dvt_m"})
 
-DEFAULT_REFERENCE: dict[str, float] = {k: 0.0 for k in FEATURE_ORDER}
-
 FEATURE_LABELS_UI: dict[str, str] = {
     "age": "Age > 80 years",
     "cancer": "History of cancer",
@@ -67,12 +65,6 @@ RISK_TIER_TXT = {
     "Low": "Predicted 30-day probability < 1%",
     "Intermediate-Low": "Predicted probability between 1% and 10%",
     "Intermediate-High": "Predicted probability > 10%",
-}
-
-TIER_PHRASE = {
-    "Low": "**low-risk** (<1% predicted 30-day mortality)",
-    "Intermediate-Low": "**intermediate-low-risk** (1–10% predicted 30-day mortality)",
-    "Intermediate-High": "**intermediate-high-risk** (>10% predicted 30-day mortality)",
 }
 
 # (accent / left border, soft background) — background hue matches each accent
@@ -219,10 +211,6 @@ def _x_vector(pf: PatientFeatures) -> np.ndarray:
     )
 
 
-def is_pure_reference_profile(pf: PatientFeatures) -> bool:
-    return bool(np.max(np.abs(_x_vector(pf))) < 1e-12)
-
-
 def linear_contribs(pf: PatientFeatures) -> list[tuple[str, float, float, float]]:
     beta = np.array([COEF[k] for k in FEATURE_ORDER], dtype=float)
     x = _x_vector(pf)
@@ -232,56 +220,8 @@ def linear_contribs(pf: PatientFeatures) -> list[tuple[str, float, float, float]
     return [(FEATURE_ORDER[i], float(beta[i]), float(x[i]), float(sh[i])) for i in range(len(FEATURE_ORDER))]
 
 
-def logit_ref() -> float:
-    return float(COEF["Intercept"])
-
-
 def label_ui(k: str) -> str:
     return FEATURE_LABELS_UI.get(k, k)
-
-
-def narrative_text(pf: PatientFeatures, p: float, tier: str, contribs: list[tuple[str, float, float, float]]) -> str:
-    strat = TIER_PHRASE.get(tier, tier)
-    lines = [
-        f"This patient's **estimated 30-day mortality risk is {p * 100:.2f}%**, classified as {strat}."
-    ]
-    if is_pure_reference_profile(pf):
-        lines.append(
-            "Compared to the **baseline reference** (all listed factors at the negative reference level; "
-            "no missing-data flags), this profile matches that reference and **shows no factor-specific attribution** "
-            "beyond the intercept."
-        )
-        return "\n\n".join(lines)
-
-    rows = [c for c in contribs if abs(c[3]) > 1e-9]
-    rows.sort(key=lambda t: abs(t[3]), reverse=True)
-    if not rows:
-        lines.append(
-            "Versus the same baseline, **attributable contributions are negligible** on the logit scale."
-        )
-        return "\n\n".join(lines)
-
-    clin = [c for c in rows if c[0] not in MISSING_KEYS][:8]
-    mis = [c for c in rows if c[0] in MISSING_KEYS][:8]
-    lines.append(
-        "**Attribution vs baseline** (all risk markers absent at reference; missing indicators = 0):"
-    )
-    if clin:
-        parts = [
-            f"{label_ui(n)}: **{c:+.3f}** on logit (marker = {int(round(xv))})"
-            for n, _b, xv, c in clin
-        ]
-        lines.append("**Clinical / laboratory:** " + "; ".join(parts) + ".")
-    if mis:
-        parts = [
-            f"{label_ui(n)}: **{c:+.3f}** on logit (indicator = {int(round(xv))})"
-            for n, _b, xv, c in mis
-        ]
-        lines.append("**Missing-data indicators:** " + "; ".join(parts) + ".")
-    lines.append(
-        "These are additive components on the **logit** scale; **not a substitute** for comprehensive clinical judgment."
-    )
-    return "\n\n".join(lines)
 
 
 def color_clinical(v: float) -> str:
@@ -477,7 +417,6 @@ Version: 1.1.0"""
     p = absolute_risk(pf)
     tier, tier_desc = risk_stratum(p)
     ctr = linear_contribs(pf)
-    story = narrative_text(pf, p, tier, ctr)
 
     bar_fig = build_mortality_gradient_bar(p)
 
@@ -511,23 +450,6 @@ Version: 1.1.0"""
         fig_shap = build_shap_figure(ctr)
         st.pyplot(fig_shap, use_container_width=True)
         plt.close(fig_shap)
-
-        st.divider()
-        st.markdown("###### Risk interpretation")
-        st.markdown(story)
-
-        with st.expander("Decomposition table", expanded=False):
-            tab = []
-            for n, _b, xv, s in ctr:
-                tab.append(
-                    {
-                        "feature": label_ui(n),
-                        "value": int(round(xv)),
-                        "beta": COEF[n],
-                        "contrib_logit": s,
-                    }
-                )
-            st.dataframe(tab, use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":
