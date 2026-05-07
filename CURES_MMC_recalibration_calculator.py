@@ -12,7 +12,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, to_rgb
+from matplotlib.colors import to_rgb
 import numpy as np
 import streamlit as st
 
@@ -65,20 +65,21 @@ FEATURE_LABELS_UI: dict[str, str] = {
 
 RISK_TIER_TXT = {
     "Low": "Predicted 30-day probability < 1%",
-    "Intermediate-Low": "Predicted probability between 1% and 10%",
-    "Intermediate-High": "Predicted probability > 10%",
+    "Low-Medium": "Predicted probability between 1% and 10%",
+    "Medium-High": "Predicted probability > 10%",
 }
 
 TIER_PHRASE = {
     "Low": "**low-risk** (<1% predicted 30-day mortality)",
-    "Intermediate-Low": "**intermediate-low-risk** (1–10% predicted 30-day mortality)",
-    "Intermediate-High": "**intermediate-high-risk** (>10% predicted 30-day mortality)",
+    "Low-Medium": "**low–medium-risk** (1–10% predicted 30-day mortality)",
+    "Medium-High": "**medium-high-risk** (>10% predicted 30-day mortality)",
 }
 
+# (accent / left border, soft background) — background hue matches each accent
 STRAT_STYLE = {
-    "Low": ("#154E82", "#eafaf1"),
-    "Intermediate-Low": ("#E0A829", "#fef5e7"),
-    "Intermediate-High": ("#9A2225", "#fdedec"),
+    "Low": ("#154E82", "#E8F1F8"),
+    "Low-Medium": ("#E0A829", "#FCF5E5"),
+    "Medium-High": ("#9A2225", "#F7E8E7"),
 }
 
 WF_PREFIX = "wf__"
@@ -194,8 +195,8 @@ def risk_stratum(p: float) -> tuple[str, str]:
     if p < 0.01:
         return "Low", RISK_TIER_TXT["Low"]
     if p <= 0.1:
-        return "Medium", RISK_TIER_TXT["Medium"]
-    return "High", RISK_TIER_TXT["High"]
+        return "Low-Medium", RISK_TIER_TXT["Low-Medium"]
+    return "Medium-High", RISK_TIER_TXT["Medium-High"]
 
 
 def _x_vector(pf: PatientFeatures) -> np.ndarray:
@@ -284,7 +285,7 @@ def narrative_text(pf: PatientFeatures, p: float, tier: str, contribs: list[tupl
 
 
 def color_clinical(v: float) -> str:
-    return "#c0392b" if v > 0 else "#2980b9"
+    return STRAT_STYLE["Medium-High"][0] if v > 0 else STRAT_STYLE["Low"][0]
 
 
 def build_shap_figure(contribs: list[tuple[str, float, float, float]]) -> plt.Figure:
@@ -347,37 +348,30 @@ def mortality_to_three_third_axis(p: float) -> float:
     return 2.0 * span + span * ((x - 0.1) / 0.9)
 
 
-def strip_linear_to_smooth_cmap(s: float) -> float:
-    """Position on 0–100 strip → [0,1]; three equal thirds map to thirds of gradient (matches risk bands layout)."""
-    t1 = 100.0 / 3.0
-    t2 = 200.0 / 3.0
-    sx = float(max(0.0, min(100.0, s)))
-    if sx <= t1:
-        return (sx / t1) * (1.0 / 3.0)
-    if sx <= t2:
-        return 1.0 / 3.0 + ((sx - t1) / (t2 - t1)) * (1.0 / 3.0)
-    return 2.0 / 3.0 + ((sx - t2) / (100.0 - t2)) * (1.0 / 3.0)
-
-
 def build_mortality_gradient_bar(p: float) -> plt.Figure:
     """
-    Horizontal gradient strip: green→amber→red by equal thirds like the dial;
-    faded segment past the needle for “unfilled” track.
-    Needle marks mapped risk position (same scale as before).
+    Horizontal strip: three equal thirds (0–1%, 1–10%, 10–100% bands), each third a flat primary color;
+    segment past the needle is muted for an “unfilled” track.
     """
     gv = mortality_to_three_third_axis(p)
     t1 = 100.0 / 3.0
     t2 = 200.0 / 3.0
 
-    cmap_grad = LinearSegmentedColormap.from_list(
-        "mort_strip",
-        ["#2ECC71", "#F39C12", "#E74C3C"],
-        N=384,
-    )
+    rgb_low = np.array(to_rgb(STRAT_STYLE["Low"][0]))
+    rgb_lm = np.array(to_rgb(STRAT_STYLE["Low-Medium"][0]))
+    rgb_mh = np.array(to_rgb(STRAT_STYLE["Medium-High"][0]))
+
     nw = 420
     s_axis = np.linspace(0.0, 100.0, nw)
-    znorm = np.array([strip_linear_to_smooth_cmap(s) for s in s_axis])
-    zm = cmap_grad(znorm)[np.newaxis, :, :]
+    zm = np.zeros((1, nw, 4), dtype=float)
+    for j, s_pos in enumerate(s_axis):
+        if s_pos <= t1:
+            zm[0, j, :3] = rgb_low
+        elif s_pos <= t2:
+            zm[0, j, :3] = rgb_lm
+        else:
+            zm[0, j, :3] = rgb_mh
+        zm[0, j, 3] = 1.0
 
     mute = np.array(to_rgb("#ecf0f1"))
     for j, s_pos in enumerate(s_axis):
@@ -388,7 +382,7 @@ def build_mortality_gradient_bar(p: float) -> plt.Figure:
         zm[0, j, 3] = 1.0
 
     fig, ax = plt.subplots(figsize=(8.6, 1.72), dpi=120)
-    ax.imshow(zm, aspect="auto", extent=[0, 100.0, 0.0, 1.0], interpolation="bilinear", origin="lower", zorder=1)
+    ax.imshow(zm, aspect="auto", extent=[0, 100.0, 0.0, 1.0], interpolation="nearest", origin="lower", zorder=1)
     ax.axvline(gv, color="#1a1a1a", lw=3.8, linestyle="-", alpha=1.0, zorder=3)
     for spine in ax.spines.values():
         spine.set_visible(True)
@@ -400,7 +394,7 @@ def build_mortality_gradient_bar(p: float) -> plt.Figure:
     ax.tick_params(axis="x", labelsize=9, colors="#2c3e50")
     ax.set_xticks([0.0, t1, t2, 100.0])
     ax.set_xticklabels(["0", "1", "10", "100"])
-    ax.set_title("Predicted 30-day mortality (%) · equal thirds ↔ 0–1%, 1–10%, 10–100%", fontsize=11, pad=10)
+    ax.set_title("Predicted 30-day mortality (%) ", fontsize=13, pad=10)
     fig.patch.set_facecolor("white")
 
     plt.tight_layout(rect=[0, 0.04, 1, 1])
@@ -506,7 +500,9 @@ Version: 1.1.0"""
             f"<span style='font-size:13px;color:#2c3e50'>{tier_desc}</span></div>",
             unsafe_allow_html=True,
         )
-        st.caption("Low <1%  |  Medium 1–10% (incl. 10%)  |  High >10%")
+        st.caption(
+            "Low <1%  |  Low-Medium 1–10% (incl. 10%)  |  Medium-High >10%"
+        )
 
         st.divider()
         st.markdown("###### Risk Attribution (SHAP)")
