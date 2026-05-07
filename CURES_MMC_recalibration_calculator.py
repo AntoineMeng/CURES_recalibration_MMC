@@ -65,21 +65,21 @@ FEATURE_LABELS_UI: dict[str, str] = {
 
 RISK_TIER_TXT = {
     "Low": "Predicted 30-day probability < 1%",
-    "Low-Medium": "Predicted probability between 1% and 10%",
-    "Medium-High": "Predicted probability > 10%",
+    "Intermediate-Low": "Predicted probability between 1% and 10%",
+    "Intermediate-High": "Predicted probability > 10%",
 }
 
 TIER_PHRASE = {
     "Low": "**low-risk** (<1% predicted 30-day mortality)",
-    "Low-Medium": "**low–medium-risk** (1–10% predicted 30-day mortality)",
-    "Medium-High": "**medium-high-risk** (>10% predicted 30-day mortality)",
+    "Intermediate-Low": "**intermediate-low-risk** (1–10% predicted 30-day mortality)",
+    "Intermediate-High": "**intermediate-high-risk** (>10% predicted 30-day mortality)",
 }
 
 # (accent / left border, soft background) — background hue matches each accent
 STRAT_STYLE = {
     "Low": ("#154E82", "#E8F1F8"),
-    "Low-Medium": ("#E0A829", "#FCF5E5"),
-    "Medium-High": ("#9A2225", "#F7E8E7"),
+    "Intermediate-Low": ("#E0A829", "#FCF5E5"),
+    "Intermediate-High": ("#9A2225", "#F7E8E7"),
 }
 
 WF_PREFIX = "wf__"
@@ -195,8 +195,8 @@ def risk_stratum(p: float) -> tuple[str, str]:
     if p < 0.01:
         return "Low", RISK_TIER_TXT["Low"]
     if p <= 0.1:
-        return "Low-Medium", RISK_TIER_TXT["Low-Medium"]
-    return "Medium-High", RISK_TIER_TXT["Medium-High"]
+        return "Intermediate-Low", RISK_TIER_TXT["Intermediate-Low"]
+    return "Intermediate-High", RISK_TIER_TXT["Intermediate-High"]
 
 
 def _x_vector(pf: PatientFeatures) -> np.ndarray:
@@ -285,7 +285,7 @@ def narrative_text(pf: PatientFeatures, p: float, tier: str, contribs: list[tupl
 
 
 def color_clinical(v: float) -> str:
-    return STRAT_STYLE["Medium-High"][0] if v > 0 else STRAT_STYLE["Low"][0]
+    return STRAT_STYLE["Intermediate-High"][0] if v > 0 else STRAT_STYLE["Low"][0]
 
 
 def build_shap_figure(contribs: list[tuple[str, float, float, float]]) -> plt.Figure:
@@ -358,8 +358,8 @@ def build_mortality_gradient_bar(p: float) -> plt.Figure:
     t2 = 200.0 / 3.0
 
     rgb_low = np.array(to_rgb(STRAT_STYLE["Low"][0]))
-    rgb_lm = np.array(to_rgb(STRAT_STYLE["Low-Medium"][0]))
-    rgb_mh = np.array(to_rgb(STRAT_STYLE["Medium-High"][0]))
+    rgb_lm = np.array(to_rgb(STRAT_STYLE["Intermediate-Low"][0]))
+    rgb_mh = np.array(to_rgb(STRAT_STYLE["Intermediate-High"][0]))
 
     nw = 420
     s_axis = np.linspace(0.0, 100.0, nw)
@@ -501,7 +501,7 @@ Version: 1.1.0"""
             unsafe_allow_html=True,
         )
         st.caption(
-            "Low <1%  |  Low-Medium 1–10% (incl. 10%)  |  Medium-High >10%"
+            "Low <1%  |  Intermediate-Low 1–10% (incl. 10%)  |  Intermediate-High >10%"
         )
 
         st.divider()
